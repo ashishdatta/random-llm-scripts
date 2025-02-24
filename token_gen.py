@@ -1,3 +1,5 @@
+import json
+
 import click
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -34,6 +36,7 @@ class TokenGenerator:
             
             # Decode tokens to text, ignoring special tokens
             new_text = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+            new_text = ''.join(new_text.split())
             
             # Update counters and text
             generated_text += new_text
@@ -51,7 +54,8 @@ class TokenGenerator:
 @click.command()
 @click.option('--tokens', '-t', type=int, required=True, help='Number of tokens to generate')
 @click.option('--prompt', '-p', type=str, default="default prompt", help='Initial prompt for generation')
-def main(tokens: int, prompt: str):
+@click.option('--output', '-o', type=str, default="output.json", help='Output JSON file path')
+def main(tokens: int, prompt: str, output: str):
     try:
         # Initialize generator
         generator = TokenGenerator()
@@ -59,6 +63,22 @@ def main(tokens: int, prompt: str):
         # Generate text
         click.echo(f"Generating {tokens} tokens...")
         generated_text = generator.generate_text(prompt, tokens)
+
+        # Create output dictionary in OpenAI chat completions input format
+        output_data = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": generated_text
+                }
+            ],
+            "temperature": 0.7,
+            "stream": False,
+        }
+        
+        # Save to JSON file
+        with open(output, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, ensure_ascii=False)
         
         # Output results
         click.echo("\nGenerated Text:")
