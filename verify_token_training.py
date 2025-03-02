@@ -7,6 +7,52 @@ import numpy as np
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.stats import gaussian_kde
+from typing import Literal
+
+def create_scatter_plot(ax, sampled_2d, tokens_2d, frequencies, tokens):
+    scatter = ax.scatter(sampled_2d[:, 0], sampled_2d[:, 1],
+                        c=frequencies,
+                        cmap='viridis',
+                        alpha=0.6,
+                        s=10)
+    plt.colorbar(scatter, ax=ax, label='Token Frequency Rank')
+    return ax
+
+def create_contour_plot(ax, sampled_2d, tokens_2d, frequencies, tokens):
+    x, y = sampled_2d[:, 0], sampled_2d[:, 1]
+    H, xedges, yedges = np.histogram2d(x, y, bins=50, weights=frequencies)
+    X, Y = np.meshgrid((xedges[:-1] + xedges[1:])/2, (yedges[:-1] + yedges[1:])/2)
+    contour = ax.contourf(X, Y, H.T, levels=20, cmap='viridis')
+    plt.colorbar(contour, ax=ax, label='Token Density')
+    return ax
+
+def create_density_plot(ax, sampled_2d, tokens_2d, frequencies, tokens):
+    x, y = sampled_2d[:, 0], sampled_2d[:, 1]
+    xy = np.vstack([x, y])
+    z = gaussian_kde(xy)(xy)
+    idx = z.argsort()
+    x, y, z = x[idx], y[idx], z[idx]
+    density = ax.scatter(x, y, c=z, cmap='viridis', s=10)
+    plt.colorbar(density, ax=ax, label='Point Density')
+    return ax
+
+def add_tokens_to_plot(ax, tokens_2d, tokens):
+    for i, token in enumerate(tokens):
+        ax.scatter(tokens_2d[i, 0], tokens_2d[i, 1],
+                  color='black',
+                  s=100,
+                  zorder=5)
+        ax.annotate(token,
+                   (tokens_2d[i, 0], tokens_2d[i, 1]),
+                   xytext=(5, 5),
+                   textcoords='offset points',
+                   fontsize=12,
+                   color='black',
+                   weight='bold')
+    ax.grid(True, alpha=0.2, linestyle='-', color='gray')
+    ax.set_aspect('equal', adjustable='box')
+    return ax
 
 @click.command()
 @click.option('--model', required=True, help='Name or path of the model to analyze')
@@ -14,7 +60,9 @@ import seaborn as sns
 @click.option('--baseline', default='the', help='Baseline token to compare against')
 @click.option('--k', default=5, help='Number of nearest neighbors to show')
 @click.option('--num_sample', default=1000, help='Number of random embeddings to sample for PCA visualization')
-def main(model, tokens, baseline, k, num_sample):
+@click.option('--viz_type', type=click.Choice(['scatter', 'contour', 'density', 'all']), 
+              default='scatter', help='Type of visualization to generate')
+def main(model, tokens, baseline, k, num_sample, viz_type):
     # 1. Load tokenizer and model
     print(colored(f"Loading model: {model}", "blue"))
     tokenizer = AutoTokenizer.from_pretrained(model)
@@ -69,14 +117,20 @@ def main(model, tokens, baseline, k, num_sample):
     # Perform PCA visualization
     print(colored("\nGenerating PCA visualization...", "blue"))
     
+    # Reset matplotlib style to default for clean look
+    plt.style.use('default')
+    
     # Sample random embeddings for visualization
     num_embeddings = embedding_matrix.shape[0]
     sample_indices = torch.randperm(num_embeddings)[:num_sample]
-    sampled_embeddings = embedding_matrix[sample_indices].cpu().numpy()
+    sampled_embeddings = embedding_matrix[sample_indices].float().cpu().numpy()
+    
+    # Get token frequencies (using token IDs as proxy for frequency rank)
+    frequencies = np.arange(num_sample)
     
     # Get embeddings for the specified tokens
     token_ids = [tokenizer.convert_tokens_to_ids(token) for token in tokens]
-    token_embeddings = embedding_matrix[token_ids].cpu().numpy()
+    token_embeddings = embedding_matrix[token_ids].float().cpu().numpy()
     
     # Combine sampled and token embeddings for PCA
     all_embeddings = np.vstack([sampled_embeddings, token_embeddings])
@@ -89,27 +143,47 @@ def main(model, tokens, baseline, k, num_sample):
     sampled_2d = embeddings_2d[:num_sample]
     tokens_2d = embeddings_2d[num_sample:]
     
-    # Create visualization
-    plt.figure(figsize=(12, 8))
+    # Create visualization based on selected type
+    if viz_type == 'all':
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(24, 8), dpi=300)
+        
+        # Create all three plots
+        ax1 = create_scatter_plot(ax1, sampled_2d, tokens_2d, frequencies, tokens)
+        ax1 = add_tokens_to_plot(ax1, tokens_2d, tokens)
+        ax1.set_title('Scatter Plot View', pad=20)
+        
+        ax2 = create_contour_plot(ax2, sampled_2d, tokens_2d, frequencies, tokens)
+        ax2 = add_tokens_to_plot(ax2, tokens_2d, tokens)
+        ax2.set_title('Contour Plot View', pad=20)
+        
+        ax3 = create_density_plot(ax3, sampled_2d, tokens_2d, frequencies, tokens)
+        ax3 = add_tokens_to_plot(ax3, tokens_2d, tokens)
+        ax3.set_title('Density Estimation View', pad=20)
+        
+        fig.suptitle('Token Embedding Space - Multiple Views', fontsize=16, y=1.05)
+    else:
+        fig, ax = plt.subplots(figsize=(12, 8), dpi=300)
+        
+        # Create selected plot type
+        if viz_type == 'scatter':
+            ax = create_scatter_plot(ax, sampled_2d, tokens_2d, frequencies, tokens)
+            title = 'Scatter Plot View'
+        elif viz_type == 'contour':
+            ax = create_contour_plot(ax, sampled_2d, tokens_2d, frequencies, tokens)
+            title = 'Contour Plot View'
+        else:  # density
+            ax = create_density_plot(ax, sampled_2d, tokens_2d, frequencies, tokens)
+            title = 'Density Estimation View'
+        
+        ax = add_tokens_to_plot(ax, tokens_2d, tokens)
+        ax.set_title(title, pad=20)
     
-    # Plot random sample points
-    plt.scatter(sampled_2d[:, 0], sampled_2d[:, 1], alpha=0.1, color='gray', label='Random tokens')
-    
-    # Plot specified tokens with different colors
-    colors = sns.color_palette("husl", len(tokens))
-    for i, (token, color) in enumerate(zip(tokens, colors)):
-        plt.scatter(tokens_2d[i, 0], tokens_2d[i, 1], color=color, s=100, label=token)
-        plt.annotate(token, (tokens_2d[i, 0], tokens_2d[i, 1]), xytext=(5, 5), textcoords='offset points')
-    
-    plt.title('2D PCA Projection of Token Embeddings')
-    plt.xlabel(f'PC1 (Explained Variance: {pca.explained_variance_ratio_[0]:.3f})')
-    plt.ylabel(f'PC2 (Explained Variance: {pca.explained_variance_ratio_[1]:.3f})')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    # Adjust layout
+    plt.tight_layout()
     
     # Save the plot
-    plt.savefig('token_embeddings_pca.png')
-    print(colored("PCA visualization saved as 'token_embeddings_pca.png'", "green"))
+    plt.savefig('token_embeddings_pca.png', dpi=300, bbox_inches='tight')
+    print(colored(f"PCA visualization ({viz_type}) saved as 'token_embeddings_pca.png'", "green"))
 
 if __name__ == '__main__':
     main()
