@@ -76,7 +76,7 @@ def main(model, tokens, baseline, k, num_sample, viz_type):
     # Load model only if we have valid baseline
     model = AutoModelForCausalLM.from_pretrained(model, torch_dtype=torch.bfloat16, device_map="auto")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+    #model = model.to(device)
     embedding_matrix = model.get_input_embeddings().weight.data.to(device)
     baseline_embedding = embedding_matrix[baseline_id]
     baseline_norm = torch.norm(baseline_embedding, p=2).item()
