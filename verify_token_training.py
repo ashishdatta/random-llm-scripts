@@ -11,12 +11,17 @@ from scipy.stats import gaussian_kde
 from typing import Literal
 
 def create_scatter_plot(ax, sampled_2d, tokens_2d, frequencies, tokens):
+    # Normalize frequencies to range [0, 1]
+    norm_frequencies = (frequencies - frequencies.min()) / (frequencies.max() - frequencies.min())
+    
     scatter = ax.scatter(sampled_2d[:, 0], sampled_2d[:, 1],
-                        c=frequencies,
+                        c=norm_frequencies,
                         cmap='viridis',
                         alpha=0.6,
-                        s=10)
-    plt.colorbar(scatter, ax=ax, label='Token Frequency Rank')
+                        s=10,
+                        vmin=0,
+                        vmax=1)
+    plt.colorbar(scatter, ax=ax, label='Token Frequency Rank (Normalized)')
     return ax
 
 def create_contour_plot(ax, sampled_2d, tokens_2d, frequencies, tokens):
